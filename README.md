@@ -1,11 +1,13 @@
 # IOC Enrichment Tool
 
-A command-line tool for SOC analysts that **parses logs, extracts indicators of
-compromise (IOCs), and enriches them with threat intelligence** from VirusTotal
-and AbuseIPDB — turning a raw log dump into a prioritised, analyst-ready triage
-table in seconds.
+A desktop + command-line tool for SOC analysts that **parses logs, extracts
+indicators of compromise (IOCs), and enriches them with threat intelligence**
+from VirusTotal and AbuseIPDB — turning a raw log dump into a prioritised,
+analyst-ready triage table in seconds.
 
 Built as part of a SOC analyst / detection-engineering portfolio.
+
+![IOC Enrichment Tool GUI](docs/screenshot.png)
 
 ```
 ┌──────────┐   ┌──────────────┐   ┌────────────────────┐   ┌──────────────┐
@@ -118,19 +120,51 @@ folder is git-ignored so host data is never committed.)
 ioc-enrichment-tool/
 ├── ioc_enrich/
 │   ├── extractor.py    # regex extraction, defang + IANA-TLD validation
-│   ├── enrichment.py   # VirusTotal & AbuseIPDB clients
-│   ├── report.py       # console table + JSON/CSV export
+│   ├── enrichment.py   # VirusTotal & AbuseIPDB clients + quota tracking
+│   ├── engine.py       # shared parse→enrich pipeline (CLI + GUI use this)
+│   ├── report.py       # verdicts, conclusions, "why" hints, JSON/CSV export
+│   ├── logparse.py     # raw-log → readable fields parser
 │   ├── cli.py          # argparse entry point
+│   ├── gui.py          # CustomTkinter desktop app
 │   └── data/tlds.txt   # bundled IANA TLD list
-├── scripts/Export-WindowsLogs.ps1   # dump Windows Event Logs to text
+├── scripts/Export-WindowsLogs.ps1   # dump Windows / Sysmon logs to text
 ├── sample_logs/        # demo logs (sample.log, sample2.log)
 ├── requirements.txt
 └── .env.example
 ```
 
+## How a verdict is reached
+
+Everything is deterministic and auditable (no AI/black box):
+
+1. **Score → verdict** (per source): AbuseIPDB ≥50% confidence → `malicious`,
+   any reports → `suspicious`; VirusTotal ≥1 malicious engine → `malicious`,
+   ≥1 suspicious → `suspicious`. The overall verdict is the **worst** across
+   providers.
+2. **Verdict → recommended action**: `malicious`→Escalate & block,
+   `suspicious`→Investigate, `clean`→Dismiss, `unknown`→Manual review / Check
+   sender / Enrich first.
+3. **"Why this verdict?"**: a plain-English confidence hint built from the raw
+   signals (engine count, abuse confidence/reports, Tor flag, domain age,
+   version-number-looks-like-an-IP) to guide true- vs false-positive judgement.
+
+## Accuracy & limitations
+
+This is a triage **assistant**, not an autonomous verdict engine. Honest scope:
+
+- **Extraction** is reliable for standard log shapes; very exotic formats may
+  leave some parsed fields blank (shown as `-`), and IPv6 is not extracted.
+- **Verdicts inherit source noise.** Examples seen on real data:
+  - *False positive:* `8.8.8.8` (Google DNS) flagged `suspicious` from
+    AbuseIPDB community misreports; `4.0.0.0` (a .NET version string) mis-read
+    as an IP. The "Why" column flags both as low-confidence.
+  - *True positive:* `185.220.101.47` — a Tor exit node, 100% abuse confidence
+    over thousands of reports, multiple VT engines. Correctly escalated.
+- **No correlation/context.** It judges each IOC in isolation; it can't see
+  "clean IP, but my server talked to it at 3am." That judgement stays with the
+  analyst. **Always verify before acting — never auto-block off this output.**
+
 ## Notes
 
 - API keys live only in `.env`, which is git-ignored — no secrets are committed.
-- Verdict mapping: AbuseIPDB ≥50% confidence → `malicious`, any reports →
-  `suspicious`; VirusTotal ≥1 malicious engine → `malicious`, ≥1 suspicious →
-  `suspicious`. The overall verdict per IOC is the worst across providers.
+- Exported machine logs (`eventlogs/`, `sysmonlogs/`) are git-ignored too.
