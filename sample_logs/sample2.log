@@ -1,0 +1,5 @@
+2026-06-09T09:02:11Z proxy: GET https://login-paypa1[.]com/verify?id=8842 user=asmith
+2026-06-09T09:03:40Z dns: query for new-bad-domain[.]xyz from 10.0.0.22 -> 193.43.146.26
+2026-06-09T09:04:55Z firewall: ALLOW src=192.168.1.50 dst=185.220.101.47 dport=9001 proto=tcp
+2026-06-09T09:06:02Z edr: quarantined hash sha256=275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f
+2026-06-09T09:08:19Z mail: phish from billing@micros0ft-support[.]net link hxxp://micros0ft-support[.]net/login

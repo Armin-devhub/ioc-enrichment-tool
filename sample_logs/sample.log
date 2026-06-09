@@ -1,0 +1,13 @@
+2026-06-09T08:14:02Z firewall: ALLOW src=192.168.1.42 dst=185.220.101.47 dport=443 proto=tcp
+2026-06-09T08:14:05Z proxy: GET http://malware-traffic-analysis.net/payload.bin user=jdoe
+2026-06-09T08:15:11Z dns: query for evil-c2[.]com from 10.0.0.15 -> 45.142.212.61
+2026-06-09T08:16:30Z mail: phishing sample from support@paypa1-secure[.]com subject "Verify your account"
+2026-06-09T08:16:31Z mail: embedded link hxxps://login-paypa1[.]com/verify?id=8842
+2026-06-09T08:18:44Z edr: process powershell.exe dropped C:\Users\jdoe\AppData\file.exe
+2026-06-09T08:18:45Z edr: file.exe sha256=44d88612fea8a8f36de82e1278abb02f44d88612fea8a8f36de82e1278abb02f
+2026-06-09T08:18:46Z edr: file.exe md5=44d88612fea8a8f36de82e1278abb02f
+2026-06-09T08:19:00Z edr: sibling hash sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+2026-06-09T08:20:13Z firewall: ALLOW src=192.168.1.42 dst=8.8.8.8 dport=53 proto=udp
+2026-06-09T08:21:55Z proxy: beacon to 185.220.101.47 every 60s low-and-slow
+2026-06-09T08:22:10Z dns: query for cdn.legit-update[.]net from 10.0.0.15
+2026-06-09T08:23:40Z auth: failed login admin from 45.142.212.61 (x37)

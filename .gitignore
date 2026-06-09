@@ -1,0 +1,30 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Output
+out/
+*.json
+*.csv
+# keep only the sample input logs, not exported results
+!sample_logs/*.log
+
+# Exported machine logs (may contain local/host data — never commit)
+eventlogs/
+sysmonlogs/
+
+# Sysmon binaries (re-downloaded by the install script; don't commit)
+tools/sysmon/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
