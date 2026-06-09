@@ -65,7 +65,7 @@ foreach ($log in $logs) {
     try {
         $events = Get-WinEvent -FilterHashtable @{ LogName = $log; StartTime = $after } -ErrorAction Stop
         $events |
-            ForEach-Object { "{0} [{1}] {2}" -f $_.TimeCreated, $_.Id, ($_.Message -replace "\s+", " ") } |
+            ForEach-Object { "{0:yyyy-MM-ddTHH:mm:ss} [{1}] {2}" -f $_.TimeCreated, $_.Id, ($_.Message -replace "\s+", " ") } |
             Out-File -FilePath $dest -Encoding utf8
         Write-Host "Wrote $($events.Count) events -> $dest"
     }

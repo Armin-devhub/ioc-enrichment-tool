@@ -8,6 +8,7 @@ read messy logs at a glance instead of squinting at raw text.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -16,7 +17,13 @@ from .extractor import extract, refang
 _TS_ISO = re.compile(
     r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b"
 )
+# Windows event-log export style, e.g. "02/06/2026 18:34:14" or "2/6/2026 6:34:14 AM"
+_TS_SLASH = re.compile(
+    r"\b\d{1,2}/\d{1,2}/\d{4}[ T]\d{1,2}:\d{2}:\d{2}(?:\s?[AP]M)?\b"
+)
 _TS_SYSLOG = re.compile(r"\b[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\b")
+# A leading "[1234]" event-id token (how the Windows export tags each line).
+_EVENTID = re.compile(r"^\s*\[(\d{1,6})\]\s*")
 _KV = re.compile(r"([A-Za-z_][\w.\-]*)=(\"[^\"]*\"|'[^']*'|\S+)")
 _LEVEL = re.compile(
     r"\b(CRITICAL|ERROR|WARNING|WARN|NOTICE|INFO|DEBUG|"
@@ -26,6 +33,10 @@ _LEVEL = re.compile(
 # A "source"/category token: the first word that ends in a colon (after any
 # leading timestamp), e.g. "firewall:", "proxy:", "dns:".
 _SOURCE = re.compile(r"^\s*([A-Za-z][\w\-]*)\s*:")
+
+# Recognised Windows/Sysmon log channels - for these, the channel name is the
+# source rather than any "word:" found inside the event message.
+_KNOWN_CHANNELS = {"System", "Application", "Security", "Sysmon", "Defender"}
 
 # Map the many real-world field names to a handful of canonical ones.
 _FIELD_ALIASES = {
@@ -65,18 +76,37 @@ def _strip_quotes(value: str) -> str:
     return value
 
 
-def parse_line(lineno: int, line: str) -> ParsedLine:
+def parse_line(lineno: int, line: str, default_source: str = "") -> ParsedLine:
     raw = line.rstrip("\n")
     text = refang(raw)
 
-    ts_match = _TS_ISO.search(text) or _TS_SYSLOG.search(text)
+    ts_match = _TS_ISO.search(text) or _TS_SLASH.search(text) or _TS_SYSLOG.search(text)
     ts = ts_match.group(0) if ts_match else ""
 
     # Everything after the timestamp is the "body" we describe.
     body = text[ts_match.end():].strip() if ts_match else text.strip()
 
-    src_match = _SOURCE.search(body)
-    source = src_match.group(1) if src_match else ""
+    # Windows export tags each line with the event id, e.g. "[134] message".
+    event_id = ""
+    eid = _EVENTID.match(body)
+    if eid:
+        event_id = eid.group(1)
+        body = body[eid.end():].strip()
+
+    # For known Windows/Sysmon channels the channel name IS the source, and the
+    # whole body is the message. For generic logs, a leading "word:" prefix
+    # (firewall:/proxy:/dns:) is the inline source.
+    if default_source in _KNOWN_CHANNELS:
+        source = default_source
+        message = body
+    else:
+        src_match = _SOURCE.search(body)
+        if src_match:
+            source = src_match.group(1)
+            message = body[src_match.end():].strip()
+        else:
+            source = default_source
+            message = body
 
     kv = {k.lower(): _strip_quotes(v) for k, v in _KV.findall(text)}
     fields: dict[str, str] = {}
@@ -85,33 +115,49 @@ def parse_line(lineno: int, line: str) -> ParsedLine:
             if alias in kv:
                 fields[canonical] = kv[alias]
                 break
+    if event_id:
+        fields["event_id"] = event_id
 
-    # Level/action: prefer an explicit action= field, else a keyword in the text.
+    # Level/action: explicit action= field, else a keyword, else the event id.
     level = fields.get("action", "")
     if not level:
         lvl = _LEVEL.search(text)
-        level = lvl.group(0) if lvl else ""
+        if lvl:
+            level = lvl.group(0)
+        elif event_id:
+            level = f"ID {event_id}"
 
     iocs = [i.value for i in extract(text, include_private_ips=True)]
 
-    message = body[src_match.end():].strip() if src_match else body
     return ParsedLine(
         lineno=lineno, raw=raw, ts=ts, source=source, level=level,
         fields=fields, iocs=iocs, message=message or body,
     )
 
 
-def parse_text(text: str) -> list[ParsedLine]:
+def _channel_name(path: str) -> str:
+    """Friendly log-channel name from a filename, used as the default source."""
+    name = os.path.splitext(os.path.basename(path))[0]
+    if "Sysmon" in name:
+        return "Sysmon"
+    if "Defender" in name:
+        return "Defender"
+    if "_" in name or "-" in name:
+        return name.replace("-", "_").split("_")[-1]
+    return name
+
+
+def parse_text(text: str, default_source: str = "") -> list[ParsedLine]:
     out = []
     for i, line in enumerate(text.splitlines(), start=1):
         if line.strip():
-            out.append(parse_line(i, line))
+            out.append(parse_line(i, line, default_source))
     return out
 
 
 def parse_file(path: str) -> list[ParsedLine]:
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
-        return parse_text(fh.read())
+        return parse_text(fh.read(), default_source=_channel_name(path))
 
 
 def parse_files(paths: list[str]) -> list[ParsedLine]:
