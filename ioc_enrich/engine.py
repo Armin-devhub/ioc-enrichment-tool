@@ -8,14 +8,40 @@ command line always behave identically; each is just a thin front-end over
 from __future__ import annotations
 
 import os
+import re
 from typing import Callable
 
 from .enrichment import Enricher
-from .extractor import extract_from_files
+from .extractor import IOC, extract_from_files
 from .report import build_rows
 
 # progress(done, total, message) — called as enrichment proceeds.
 ProgressFn = Callable[[int, int, str], None]
+
+# File-hash type by hex length, used for direct --hash lookups.
+_HEX_RE = re.compile(r"^[a-f0-9]+$")
+_HASH_TYPE_BY_LEN = {32: "md5", 40: "sha1", 64: "sha256"}
+
+
+def hashes_to_iocs(values: list[str], source: str = "manual") -> list[IOC]:
+    """Turn raw hash strings into IOC objects (md5/sha1/sha256 by length).
+
+    Lets the scanner / a user feed hashes straight in without wrapping them in a
+    log file. Raises ``ValueError`` on anything that isn't a valid hex hash.
+    """
+    iocs: list[IOC] = []
+    seen: set[str] = set()
+    for raw in values:
+        v = raw.strip().lower()
+        if not v or v in seen:
+            continue
+        if not _HEX_RE.match(v) or len(v) not in _HASH_TYPE_BY_LEN:
+            raise ValueError(raw)
+        seen.add(v)
+        ioc = IOC(value=v, type=_HASH_TYPE_BY_LEN[len(v)], count=1)
+        ioc.sources.add(source)
+        iocs.append(ioc)
+    return iocs
 
 
 def collect_files(
@@ -76,6 +102,32 @@ def analyse(
     enrichment, so a UI can update its usage bars.
     """
     iocs = extract_from_files(files, include_private_ips=include_private_ips)
+    return analyse_iocs(
+        iocs,
+        enrich=enrich,
+        vt_key=vt_key,
+        abuse_key=abuse_key,
+        pause=pause,
+        progress=progress,
+        usage_out=usage_out,
+    )
+
+
+def analyse_iocs(
+    iocs: list[IOC],
+    enrich: bool = True,
+    vt_key: str | None = None,
+    abuse_key: str | None = None,
+    pause: float = 0.0,
+    progress: ProgressFn | None = None,
+    usage_out: dict | None = None,
+) -> list[dict]:
+    """Enrich an already-built IOC list and return report rows.
+
+    The second half of :func:`analyse`, split out so callers that already have
+    IOCs (e.g. a list of file hashes from the YARA scanner) reuse the exact same
+    enrich -> rows pipeline.
+    """
     total = len(iocs)
     if progress:
         progress(0, total, f"Found {total} unique IOCs")

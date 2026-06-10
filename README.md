@@ -88,6 +88,9 @@ python -m ioc_enrich.cli --dir sample_logs
 
 # respect VirusTotal's free tier (4 req/min) and export results
 python -m ioc_enrich.cli sample_logs\sample.log --pause 15 --json out\iocs.json --csv out\iocs.csv
+
+# check file hashes directly against VirusTotal - no log file needed
+python -m ioc_enrich.cli --hash <sha256> <md5> ...
 ```
 
 ### Options
@@ -96,10 +99,15 @@ python -m ioc_enrich.cli sample_logs\sample.log --pause 15 --json out\iocs.json 
 |------|-------------|
 | `--dir PATH` | Analyse every file in a folder. |
 | `--recursive` | With `--dir`, also descend into subfolders. |
+| `--hash HASH...` | Check one or more file hashes (md5/sha1/sha256) straight against VirusTotal, without a log file. |
 | `--no-enrich` | Extract only; skip all API calls. |
 | `--include-private-ips` | Also report internal/reserved IPs. |
 | `--pause SECONDS` | Delay between API calls (free-tier rate limits). |
 | `--json PATH` / `--csv PATH` | Export results. |
+
+> **Pairs with the [YARA scanner](https://github.com/Armin-devhub/yara-malware-portfolio):**
+> when a YARA rule flags a file, it prints the file's SHA256 — paste it here with
+> `--hash` to get a multi-engine VirusTotal verdict. File-layer detection → threat-intel triage.
 
 ### Try it on your own machine's logs (Windows)
 

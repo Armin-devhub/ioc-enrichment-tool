@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from . import __version__
-from .engine import analyse, collect_files
+from .engine import analyse, analyse_iocs, collect_files, hashes_to_iocs
 from .report import export_csv, export_json, render_console
 
 
@@ -34,6 +34,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--recursive",
         action="store_true",
         help="with --dir, also descend into subfolders",
+    )
+    p.add_argument(
+        "--hash",
+        nargs="+",
+        metavar="HASH",
+        dest="hashes",
+        help="check one or more file hashes (md5/sha1/sha256) directly against "
+        "VirusTotal - no log file needed (e.g. paste hashes from the YARA scanner)",
     )
     p.add_argument(
         "--no-enrich",
@@ -69,6 +77,39 @@ def main(argv: list[str] | None = None) -> int:
             pass
     console = Console()
 
+    load_dotenv()
+    vt_key = os.getenv("VIRUSTOTAL_API_KEY") or None
+    abuse_key = os.getenv("ABUSEIPDB_API_KEY") or None
+
+    # --- Direct hash-check mode (no log file) ---------------------------------
+    if args.hashes:
+        try:
+            iocs = hashes_to_iocs(args.hashes)
+        except ValueError as bad:
+            console.print(
+                f"[bold red]error:[/] not a valid md5/sha1/sha256 hash: {bad}"
+            )
+            return 1
+        if not args.no_enrich and not vt_key:
+            console.print(
+                "[yellow]No VirusTotal key set (.env) — can't check hashes. "
+                "Copy .env.example to .env and add VIRUSTOTAL_API_KEY.[/]"
+            )
+        console.print(f"[cyan]Checking[/] {len(iocs)} hash(es) against VirusTotal ...")
+        with console.status("Looking up ..."):
+            rows = analyse_iocs(
+                iocs, enrich=not args.no_enrich, vt_key=vt_key,
+                abuse_key=abuse_key, pause=args.pause,
+            )
+        render_console(rows, console)
+        if args.json:
+            export_json(rows, args.json)
+            console.print(f"[green]Wrote[/] {args.json}")
+        if args.csv:
+            export_csv(rows, args.csv)
+            console.print(f"[green]Wrote[/] {args.csv}")
+        return 0
+
     try:
         files = collect_files(args.logfiles, folder=args.dir, recursive=args.recursive)
     except FileNotFoundError as exc:
@@ -78,12 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         console.print(f"[bold red]error:[/] not a folder: {exc}")
         return 1
     if not files:
-        console.print("[bold red]error:[/] no input files. Pass file paths or --dir PATH.")
+        console.print("[bold red]error:[/] no input files. Pass file paths, --dir PATH, or --hash HASH.")
         return 1
-
-    load_dotenv()
-    vt_key = os.getenv("VIRUSTOTAL_API_KEY") or None
-    abuse_key = os.getenv("ABUSEIPDB_API_KEY") or None
 
     label = files[0] if len(files) == 1 else f"{len(files)} files"
     console.print(f"[cyan]Parsing[/] {label} ...")
